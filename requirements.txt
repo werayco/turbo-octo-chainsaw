@@ -1,3 +1,4 @@
+distutils
 setuptools>=65.0.0
 pip>=24.0
 librosa==0.10.0
