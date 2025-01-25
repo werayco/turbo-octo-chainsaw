@@ -3,11 +3,8 @@ import librosa
 import numpy as np
 from pydub import AudioSegment
 import soundfile as sf
-from sklearn.cluster import KMeans
-import random
 import os
 
-# Helper functions
 def calculate_bpm(filename):
     y, sr = librosa.load(filename, sr=None)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
@@ -15,108 +12,98 @@ def calculate_bpm(filename):
 
 def time_stretch(y, sr, original_bpm, target_bpm):
     stretch_factor = float(target_bpm) / float(original_bpm)
-    y_stretched = librosa.effects.time_stretch(y, rate=stretch_factor)
+    if isinstance(y, np.ndarray):
+        if y.ndim == 1:
+            y_stretched = librosa.effects.time_stretch(y, rate=stretch_factor)
+        elif y.ndim == 2:
+            y_stretched = np.array([librosa.effects.time_stretch(channel, rate=stretch_factor) for channel in y])
+        else:
+            raise ValueError("Input audio must be mono or stereo (1D or 2D array).")
+    else:
+        raise TypeError("Audio data (y) must be a numpy ndarray.")
+
     return y_stretched
 
 def convert_to_audio_segment(y, sr, filename="temp.wav"):
     sf.write(filename, y, sr)
     return AudioSegment.from_file(filename)
 
-def crossfade_random_sections(songs, crossfade_duration=3000):
-    if len(songs) == 0:
-        raise ValueError("No songs provided for crossfade.")
+def crossfade_on_bpm_threshold(song_a, song_b, bpm_a, bpm_b, crossfade_duration=3000, bpm_threshold=100):
+    song_a_len = len(song_a)
+    song_b_len = len(song_b)
 
-    final_mix = songs[0]
+    crossfade_start_a = int(song_a_len * 0.75)
+    crossfade_start_b = int(song_b_len * 0.25)
 
-    for i in range(1, len(songs)):
-        current_song = final_mix
-        next_song = songs[i]
+    if bpm_a >= bpm_threshold and bpm_b >= bpm_threshold:
+        segment_a = song_a[:crossfade_start_a]
+        segment_b = song_b[crossfade_start_b:]
 
-        current_song_end = random.randint(0, len(current_song) - crossfade_duration)
-        next_song_start = random.randint(0, len(next_song) - crossfade_duration)
+        final_mix = segment_a.append(segment_b, crossfade=crossfade_duration)
+        return final_mix
+    else:
+        return song_a + song_b
 
-        current_segment = current_song[:current_song_end]
-        next_segment = next_song[next_song_start:]
+def organize_by_bpm(audio_data):
+    sorted_audio_data = sorted(audio_data, key=lambda x: x[2])
+    return sorted_audio_data
 
-        final_mix = current_segment.append(next_segment, crossfade=crossfade_duration)
+st.title("BPM Based Crossfade DJ Mix Creator")
+st.markdown("Upload your audio files, and generate your mix based on a fixed BPM threshold of 90.")
 
-    return final_mix
+uploaded_files = st.file_uploader("Choose MP3 files", type=["mp3"], accept_multiple_files=True)
 
-def cluster_songs(bpm_list, n_clusters=4):
-    bpm_array = np.array(bpm_list).reshape(-1, 1)
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-    clusters = kmeans.fit_predict(bpm_array)
-    return clusters
+if uploaded_files:
+    bpm_threshold = 90  
+    
+    bpm_list = []
+    audio_data = []
 
-# Streamlit Interface
-st.title("Audio BPM Clustering and Mixing")
-st.write("Upload your audio files to create a BPM-clustered mix with crossfades.")
-
-uploaded_files = st.file_uploader("Upload Audio Files", type=["mp3", "wav"], accept_multiple_files=True)
-bpm_threshold = st.number_input("BPM Threshold", min_value=1, max_value=300, value=90)
-n_clusters = st.number_input("Number of Clusters", min_value=1, max_value=10, value=3)
-crossfade_duration = st.slider("Crossfade Duration (ms)", min_value=1000, max_value=10000, value=3000)
-
-if st.button("Generate Mix"):
-    if uploaded_files:
-        st.write("Processing uploaded files...")
-        bpm_list = []
-        audio_data = []
-
-        for uploaded_file in uploaded_files:
-            with open(uploaded_file.name, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-
-            y, sr, bpm = calculate_bpm(uploaded_file.name)
-            st.write(f"{uploaded_file.name}: Detected BPM = {bpm}")
-
+    with st.spinner("Processing your audio files..."):
+        for song_file in uploaded_files:
+            y, sr, bpm = calculate_bpm(song_file)
+            st.write(f"Detected BPM for {song_file.name}: {bpm}")
             if bpm >= bpm_threshold:
                 bpm_list.append(bpm)
-                audio_data.append((y, sr, bpm, uploaded_file.name))
+                audio_data.append((y, sr, bpm, song_file.name))
             else:
-                st.write(f"Excluding {uploaded_file.name} due to low BPM ({bpm} < {bpm_threshold})")
+                st.write(f"Excluding {song_file.name} due to low BPM ({bpm} < {bpm_threshold})")
 
-        if bpm_list:
-            clusters = cluster_songs(bpm_list, n_clusters=n_clusters)
-            final_mix = None
+        if not bpm_list:
+            st.warning("No songs meet the BPM threshold. Exiting.")
+            st.stop()
 
-            for cluster_id in range(n_clusters):
-                st.write(f"Processing cluster {cluster_id}...")
-                cluster_songs = [audio_data[i] for i in range(len(clusters)) if clusters[i] == cluster_id]
-                cluster_segments = []
+        sorted_audio_data = organize_by_bpm(audio_data)
+        final_mix = None
 
-                target_bpm = None
-                for i, (y, sr, bpm, song_path) in enumerate(cluster_songs):
-                    if target_bpm is None:
-                        target_bpm = bpm
+        for i, (y, sr, bpm, song_name) in enumerate(sorted_audio_data):
+            st.write(f"Processing {song_name}...")
 
-                    if bpm != target_bpm:
-                        y = time_stretch(y, sr, bpm, target_bpm)
+            current_segment = convert_to_audio_segment(y, sr, filename=f"temp_song_{i}.wav")
 
-                    audio_segment = convert_to_audio_segment(y, sr, filename=f"temp_cluster_{cluster_id}_song{i}.wav")
-                    cluster_segments.append(audio_segment)
+            if i == 0:
+                final_mix = current_segment
+            else:
+                previous_segment = final_mix
+                previous_bpm = sorted_audio_data[i - 1][2]
+                current_bpm = bpm
+                final_mix = crossfade_on_bpm_threshold(previous_segment, current_segment, previous_bpm, current_bpm, crossfade_duration=5000, bpm_threshold=bpm_threshold)
 
-                if cluster_segments:
-                    cluster_mix = crossfade_random_sections(cluster_segments, crossfade_duration=crossfade_duration)
 
-                    if final_mix is None:
-                        final_mix = cluster_mix
-                    else:
-                        final_mix = final_mix.append(cluster_mix, crossfade=crossfade_duration)
-
-            if final_mix:
-                output_file = "final_clustered_bpm_mix.mp3"
-                final_mix.export(output_file, format="mp3")
-                st.success(f"Final mix saved as {output_file}")
-
-                # Stream the mix
-                st.audio(output_file, format="audio/mp3")
-
-                # Allow user to download the mix
-                with open(output_file, "rb") as f:
-                    st.download_button("Download Mix", f, file_name=output_file)
-                os.remove(output_file)
-        else:
-            st.error("No songs meet the BPM threshold.")
+    if final_mix:
+        output_file = "final_bpm_sorted_crossfade_mix.mp3"
+        final_mix.export(output_file, format="mp3")
+        
+        st.success(f"Final mix with sorted BPM and crossfades created!")
+        
+        with open(output_file, "rb") as f:
+            st.download_button(
+                label="Download Final Mix",
+                data=f,
+                file_name=output_file,
+                mime="audio/mp3"
+            )
+        
+        os.remove(output_file)
     else:
-        st.error("Please upload at least one audio file.")
+        st.warning("No final mix created. Check your input songs and BPM threshold.")
