@@ -5,8 +5,13 @@ from pydub import AudioSegment
 import soundfile as sf
 import os
 
-def calculate_bpm(filename):
-    y, sr = librosa.load(filename, sr=None)
+def calculate_bpm(uploaded_file):
+    temp_file_path = f"temp_{uploaded_file.name}"
+    with open(temp_file_path, "wb") as f:
+        f.write(uploaded_file.read())
+        y, sr = librosa.load(temp_file_path, sr=None)
+    
+    os.remove(temp_file_path)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
     return y, sr, tempo
 
@@ -48,8 +53,8 @@ def organize_by_bpm(audio_data):
     sorted_audio_data = sorted(audio_data, key=lambda x: x[2])
     return sorted_audio_data
 
-st.title("BPM Based Crossfade DJ Mix Creator")
-st.markdown("Upload your audio files, and generate your mix based on a fixed BPM threshold of 90.")
+st.title("TSP DJ Mix Creator")
+st.markdown("Upload your audio files and enjoy the power our ai mix")
 
 uploaded_files = st.file_uploader("Choose MP3 files", type=["mp3"], accept_multiple_files=True)
 
@@ -61,13 +66,17 @@ if uploaded_files:
 
     with st.spinner("Processing your audio files..."):
         for song_file in uploaded_files:
-            y, sr, bpm = calculate_bpm(song_file)
-            st.write(f"Detected BPM for {song_file.name}: {bpm}")
-            if bpm >= bpm_threshold:
-                bpm_list.append(bpm)
-                audio_data.append((y, sr, bpm, song_file.name))
-            else:
-                st.write(f"Excluding {song_file.name} due to low BPM ({bpm} < {bpm_threshold})")
+            try:
+                y, sr, bpm = calculate_bpm(song_file)
+                st.write(f"Detected BPM for {song_file.name}: {bpm}")
+                if bpm >= bpm_threshold:
+                    bpm_list.append(bpm)
+                    audio_data.append((y, sr, bpm, song_file.name))
+                else:
+                    st.write(f"Excluding {song_file.name} due to low BPM ({bpm} < {bpm_threshold})")
+            except Exception as e:
+                st.error(f"Error processing {song_file.name}: {e}")
+                continue
 
         if not bpm_list:
             st.warning("No songs meet the BPM threshold. Exiting.")
@@ -79,16 +88,19 @@ if uploaded_files:
         for i, (y, sr, bpm, song_name) in enumerate(sorted_audio_data):
             st.write(f"Processing {song_name}...")
 
-            current_segment = convert_to_audio_segment(y, sr, filename=f"temp_song_{i}.wav")
+            try:
+                current_segment = convert_to_audio_segment(y, sr, filename=f"temp_song_{i}.wav")
 
-            if i == 0:
-                final_mix = current_segment
-            else:
-                previous_segment = final_mix
-                previous_bpm = sorted_audio_data[i - 1][2]
-                current_bpm = bpm
-                final_mix = crossfade_on_bpm_threshold(previous_segment, current_segment, previous_bpm, current_bpm, crossfade_duration=5000, bpm_threshold=bpm_threshold)
-
+                if i == 0:
+                    final_mix = current_segment
+                else:
+                    previous_segment = final_mix
+                    previous_bpm = sorted_audio_data[i - 1][2]
+                    current_bpm = bpm
+                    final_mix = crossfade_on_bpm_threshold(previous_segment, current_segment, previous_bpm, current_bpm, crossfade_duration=5000, bpm_threshold=bpm_threshold)
+            except Exception as e:
+                st.error(f"Error during processing {song_name}: {e}")
+                continue
 
     if final_mix:
         output_file = "final_bpm_sorted_crossfade_mix.mp3"
