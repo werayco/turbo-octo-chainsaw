@@ -4,15 +4,11 @@ import numpy as np
 from pydub import AudioSegment
 import soundfile as sf
 import os
-import scipy.signal.windows as windows
+from scipy.signal import windows
 
-def calculate_bpm(uploaded_file):
-    temp_file_path = f"temp_{uploaded_file.name}"
-    with open(temp_file_path, "wb") as f:
-        f.write(uploaded_file.read())
-    y, sr = librosa.load(temp_file_path, sr=None)
+def calculate_bpm(filename):
+    y, sr = librosa.load(filename, sr=None)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-    os.remove(temp_file_path)
     return y, sr, tempo
 
 def time_stretch(y, sr, original_bpm, target_bpm):
@@ -70,7 +66,7 @@ if uploaded_files:
                 else:
                     st.write(f"Excluding {song_file.name} due to low BPM ({bpm} < {bpm_threshold})")
             except Exception as e:
-                st.error(f"Error processing {song_file.name}: {str(e)}")
+                st.error(f"Error processing {song_file.name}: {e}")
 
         if not bpm_list:
             st.warning("No songs meet the BPM threshold. Exiting.")
