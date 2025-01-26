@@ -5,3 +5,4 @@ pydub
 numpy==1.23.5
 ffmpeg-python
 scipy
+ffmpeg-downloader
