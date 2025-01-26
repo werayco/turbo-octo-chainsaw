@@ -4,15 +4,15 @@ import numpy as np
 from pydub import AudioSegment
 import soundfile as sf
 import os
+import scipy.signal.windows as windows
 
 def calculate_bpm(uploaded_file):
     temp_file_path = f"temp_{uploaded_file.name}"
     with open(temp_file_path, "wb") as f:
         f.write(uploaded_file.read())
-        y, sr = librosa.load(temp_file_path, sr=None)
-    
-    os.remove(temp_file_path)
+    y, sr = librosa.load(temp_file_path, sr=None)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    os.remove(temp_file_path)
     return y, sr, tempo
 
 def time_stretch(y, sr, original_bpm, target_bpm):
@@ -26,7 +26,6 @@ def time_stretch(y, sr, original_bpm, target_bpm):
             raise ValueError("Input audio must be mono or stereo (1D or 2D array).")
     else:
         raise TypeError("Audio data (y) must be a numpy ndarray.")
-
     return y_stretched
 
 def convert_to_audio_segment(y, sr, filename="temp.wav"):
@@ -36,14 +35,11 @@ def convert_to_audio_segment(y, sr, filename="temp.wav"):
 def crossfade_on_bpm_threshold(song_a, song_b, bpm_a, bpm_b, crossfade_duration=3000, bpm_threshold=100):
     song_a_len = len(song_a)
     song_b_len = len(song_b)
-
     crossfade_start_a = int(song_a_len * 0.75)
     crossfade_start_b = int(song_b_len * 0.25)
-
     if bpm_a >= bpm_threshold and bpm_b >= bpm_threshold:
         segment_a = song_a[:crossfade_start_a]
         segment_b = song_b[crossfade_start_b:]
-
         final_mix = segment_a.append(segment_b, crossfade=crossfade_duration)
         return final_mix
     else:
@@ -53,14 +49,13 @@ def organize_by_bpm(audio_data):
     sorted_audio_data = sorted(audio_data, key=lambda x: x[2])
     return sorted_audio_data
 
-st.title("TSP DJ Mix Creator")
-st.markdown("Upload your audio files and enjoy the power our ai mix")
+st.title("BPM Based Crossfade DJ Mix Creator")
+st.markdown("Upload your audio files, and generate your mix based on a fixed BPM threshold of 90.")
 
 uploaded_files = st.file_uploader("Choose MP3 files", type=["mp3"], accept_multiple_files=True)
 
 if uploaded_files:
-    bpm_threshold = 90  
-    
+    bpm_threshold = 90
     bpm_list = []
     audio_data = []
 
@@ -75,8 +70,7 @@ if uploaded_files:
                 else:
                     st.write(f"Excluding {song_file.name} due to low BPM ({bpm} < {bpm_threshold})")
             except Exception as e:
-                st.error(f"Error processing {song_file.name}: {e}")
-                continue
+                st.error(f"Error processing {song_file.name}: {str(e)}")
 
         if not bpm_list:
             st.warning("No songs meet the BPM threshold. Exiting.")
@@ -87,27 +81,19 @@ if uploaded_files:
 
         for i, (y, sr, bpm, song_name) in enumerate(sorted_audio_data):
             st.write(f"Processing {song_name}...")
-
-            try:
-                current_segment = convert_to_audio_segment(y, sr, filename=f"temp_song_{i}.wav")
-
-                if i == 0:
-                    final_mix = current_segment
-                else:
-                    previous_segment = final_mix
-                    previous_bpm = sorted_audio_data[i - 1][2]
-                    current_bpm = bpm
-                    final_mix = crossfade_on_bpm_threshold(previous_segment, current_segment, previous_bpm, current_bpm, crossfade_duration=5000, bpm_threshold=bpm_threshold)
-            except Exception as e:
-                st.error(f"Error during processing {song_name}: {e}")
-                continue
+            current_segment = convert_to_audio_segment(y, sr, filename=f"temp_song_{i}.wav")
+            if i == 0:
+                final_mix = current_segment
+            else:
+                previous_segment = final_mix
+                previous_bpm = sorted_audio_data[i - 1][2]
+                current_bpm = bpm
+                final_mix = crossfade_on_bpm_threshold(previous_segment, current_segment, previous_bpm, current_bpm, crossfade_duration=5000, bpm_threshold=bpm_threshold)
 
     if final_mix:
         output_file = "final_bpm_sorted_crossfade_mix.mp3"
         final_mix.export(output_file, format="mp3")
-        
         st.success(f"Final mix with sorted BPM and crossfades created!")
-        
         with open(output_file, "rb") as f:
             st.download_button(
                 label="Download Final Mix",
@@ -115,7 +101,6 @@ if uploaded_files:
                 file_name=output_file,
                 mime="audio/mp3"
             )
-        
         os.remove(output_file)
     else:
         st.warning("No final mix created. Check your input songs and BPM threshold.")
