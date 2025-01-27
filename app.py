@@ -4,8 +4,28 @@ import numpy as np
 from pydub import AudioSegment
 import soundfile as sf
 import os
+import requests
 from scipy.signal import windows
 
+# Download ffmpeg.exe
+def download_ffmpeg():
+    url = 'https://drive.google.com/uc?id=1w6H-h1zJ-_Ab70LaehuSo5yoqzH9PJjd&export=download'
+    ffmpeg_path = "ffmpeg.exe"
+    if not os.path.exists(ffmpeg_path):
+        st.info("Downloading ffmpeg...")
+        response = requests.get(url, stream=True)
+        with open(ffmpeg_path, 'wb') as file:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:  # Filter out keep-alive new chunks
+                    file.write(chunk)
+        st.success("ffmpeg downloaded successfully!")
+    return ffmpeg_path
+
+# Set ffmpeg path for pydub
+ffmpeg_path = download_ffmpeg()
+AudioSegment.converter = ffmpeg_path
+
+# BPM-related functions
 def calculate_bpm(filename):
     y, sr = librosa.load(filename, sr=None)
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
@@ -45,6 +65,7 @@ def organize_by_bpm(audio_data):
     sorted_audio_data = sorted(audio_data, key=lambda x: x[2])
     return sorted_audio_data
 
+# Streamlit App
 st.title("BPM Based Crossfade DJ Mix Creator")
 st.markdown("Upload your audio files, and generate your mix based on a fixed BPM threshold of 90.")
 
