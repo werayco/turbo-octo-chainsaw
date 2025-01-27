@@ -7,6 +7,8 @@ import os
 import requests
 from scipy.signal import windows
 
+
+window = windows.hann(51)
 # Download ffmpeg.exe
 def download_ffmpeg():
     url = 'https://drive.google.com/uc?id=1w6H-h1zJ-_Ab70LaehuSo5yoqzH9PJjd&export=download'
