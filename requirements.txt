@@ -1,8 +1,8 @@
-setuptools
+librosa==0.10.2
+pydub==0.25.1
+scikit-learn
+numpy
+flask
 pip==25
-librosa==0.10.0
-pydub
-numpy==1.23.5
 ffmpeg-python
-scipy
 ffmpeg-downloader
